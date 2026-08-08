@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'models/debitur.dart';
+import 'models/kasbon.dart';
+import 'models/pembayaran.dart';
+
 void main() {
   runApp(const BankPlecitApp());
 }
@@ -31,22 +35,12 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  final List<Map<String, dynamic>> kasbon = [];
+  final List<Debitur> debitur = [];
 
 double get totalPiutang {
-  return kasbon.fold(
+  return debitur.fold(
     0.0,
-    (total, item) {
-      final daftarKasbon =
-          (item['kasbon'] as List?)?.cast<num>() ?? [];
-
-      final totalKasbon = daftarKasbon.fold(
-        0.0,
-        (subtotal, nominal) => subtotal + nominal,
-      );
-
-      return total + totalKasbon;
-    },
+    (total, item) => total + item.totalKasbon,
   );
 }
 
@@ -82,7 +76,7 @@ double get totalPiutang {
             const SizedBox(height: 24),
 
             Text(
-  '${kasbon.length} Debitur',
+  '${debitur.length} Debitur',
               style: TextStyle(
                 fontSize: 18,
               ),
@@ -91,9 +85,9 @@ double get totalPiutang {
 
 Expanded(
   child: ListView.builder(
-    itemCount: kasbon.length,
+    itemCount: debitur.length,
     itemBuilder: (context, index) {
-      final item = kasbon[index];
+      final item = debitur[index];
 
       return ListTile(
           onTap: () async {
@@ -101,7 +95,7 @@ Expanded(
       context,
       MaterialPageRoute(
         builder: (context) => DetailDebiturPage(
-          data: item,
+          debitur: item,
         ),
       ),
     );
@@ -111,23 +105,11 @@ Expanded(
         leading: const CircleAvatar(
           child: Icon(Icons.person),
         ),
-        title: Text(item['nama']),
+        title: Text(item.nama),
         subtitle: const Text('Belum lunas'),
-        trailing: Builder(
-          builder: (context) {
-            final daftarKasbon =
-                (item['kasbon'] as List?)?.cast<num>() ?? [];
-
-            final total = daftarKasbon.fold(
-              0.0,
-                (sum, nominal) => sum + nominal,
-          );
-
-    return Text(
-      'Rp ${total.toStringAsFixed(0)}',
-    );
-  },
-),
+        trailing: Text(
+          'Rp ${item.totalKasbon.toStringAsFixed(0)}',
+        ),
       );
     },
   ),
@@ -138,7 +120,7 @@ Expanded(
               width: double.infinity,
               child: FilledButton.icon(
         onPressed: () async {
-          final hasil = await Navigator.push(
+          final hasil = await Navigator.push<Debitur>(
             context,
             MaterialPageRoute(
               builder: (context) => const AddLoanPage(),
@@ -147,16 +129,14 @@ Expanded(
 
           if (hasil != null) {
             setState(() {
-              final indexDebitur = kasbon.indexWhere(
-                (debitur) => debitur['nama'] == hasil['nama'],
+              final indexDebitur = debitur.indexWhere(
+                (item) => item.nama.toLowerCase() == hasil.nama.toLowerCase(),
               );
-              final nominal = (hasil['kasbon'] as List).first as double;
 
               if (indexDebitur == -1) {
-                kasbon.add(hasil);
+                debitur.add(hasil);
               } else {
-                final daftarKasbon = kasbon[indexDebitur]['kasbon'] as List<double>;
-                daftarKasbon.add(nominal);
+                debitur[indexDebitur].kasbon.add(hasil.kasbon.first);
               }
             });
           }
@@ -186,11 +166,11 @@ Expanded(
 }
 
 class DetailDebiturPage extends StatefulWidget {
-  final Map<String, dynamic> data;
+  final Debitur debitur;
 
   const DetailDebiturPage({
     super.key,
-    required this.data,
+    required this.debitur,
   });
 
   @override
@@ -199,31 +179,16 @@ class DetailDebiturPage extends StatefulWidget {
 
 class _DetailDebiturPageState extends State<DetailDebiturPage> {
 double get totalUtang {
-  final daftarKasbon =
-      (widget.data['kasbon'] as List?)?.cast<num>() ?? [];
-
-  return daftarKasbon.fold(
-    0.0,
-    (total, nominal) => total + nominal,
-  );
+  return widget.debitur.totalKasbon;
 }
  double get totalBayar {
-  final pembayaran =
-      (widget.data['pembayaran'] as List?)?.cast<num>() ?? [];
-
-  return pembayaran.fold(
-    0.0,
-    (total, nominal) => total + nominal,
-  );
+  return widget.debitur.totalPembayaran;
 }
   double get sisa {
-    final hasil = totalUtang - totalBayar;
-    return hasil < 0 ? 0 : hasil;
+    return widget.debitur.sisa;
   }
 double get kelebihanBayar {
-  return totalBayar > totalUtang
-      ? totalBayar - totalUtang
-      : 0;
+  return widget.debitur.kelebihanBayar;
 }
 
 String get status {
@@ -285,10 +250,13 @@ Future<void> catatPembayaran() async {
 
 if (nominal != null) {
   setState(() {
-    final pembayaran =
-        widget.data['pembayaran'] ??= <double>[];
-
-    pembayaran.add(nominal);
+    widget.debitur.pembayaran.add(
+      Pembayaran(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        nominal: nominal,
+        tanggal: DateTime.now(),
+      ),
+    );
   });
 }
 }
@@ -297,7 +265,7 @@ if (nominal != null) {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.data['nama']),
+        title: Text(widget.debitur.nama),
       ),
 
       body: Padding(
@@ -441,11 +409,18 @@ void simpanKasbon() {
 
   Navigator.pop(
     context,
-    {
-      'nama': nama,
-      'kasbon': <double>[nominal],
-      'pembayaran': <double>[],
-    },
+    Debitur(
+      id: 'debitur-${DateTime.now().microsecondsSinceEpoch}',
+      nama: nama,
+      kasbon: [
+        Kasbon(
+          id: 'kasbon-${DateTime.now().microsecondsSinceEpoch}',
+          nominal: nominal,
+          tanggal: DateTime.now(),
+        ),
+      ],
+      pembayaran: [],
+    ),
   );
 }
 
