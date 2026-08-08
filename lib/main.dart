@@ -147,7 +147,17 @@ Expanded(
 
           if (hasil != null) {
             setState(() {
-              kasbon.add(hasil);
+              final indexDebitur = kasbon.indexWhere(
+                (debitur) => debitur['nama'] == hasil['nama'],
+              );
+              final nominal = (hasil['kasbon'] as List).first as double;
+
+              if (indexDebitur == -1) {
+                kasbon.add(hasil);
+              } else {
+                final daftarKasbon = kasbon[indexDebitur]['kasbon'] as List<double>;
+                daftarKasbon.add(nominal);
+              }
             });
           }
         },
@@ -433,7 +443,7 @@ void simpanKasbon() {
     context,
     {
       'nama': nama,
-      'nominal': <double>[nominal],
+      'kasbon': <double>[nominal],
       'pembayaran': <double>[],
     },
   );
