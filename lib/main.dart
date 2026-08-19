@@ -62,7 +62,7 @@ class _DashboardPageState extends State<DashboardPage> {
   final List<Debitur> debitur = [];
 
   double get totalPiutang {
-    return debitur.fold(0.0, (total, item) => total + item.totalKasbon);
+    return debitur.fold(0.0, (total, item) => total + item.sisa);
   }
 
   @override
@@ -159,8 +159,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     },
                     leading: const CircleAvatar(child: Icon(Icons.person)),
                     title: Text(item.nama),
-                    subtitle: const Text('Belum lunas'),
-                    trailing: Text('Rp ${item.totalKasbon.toStringAsFixed(0)}'),
+                    subtitle: Text(item.sisa <= 0 ? 'Lunas' : 'Belum lunas'),
+                    trailing: Text('Rp ${item.sisa.toStringAsFixed(0)}'),
                   );
                 },
               ),
@@ -285,15 +285,45 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
     controller.dispose();
 
     if (nominal != null) {
-      setState(() {
-        widget.debitur.pembayaran.add(
-          Pembayaran(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            nominal: nominal,
-            tanggal: DateTime.now(),
-          ),
+      try {
+        await DebiturRepository().addPembayaran(
+          debiturId: widget.debitur.id,
+          nominal: nominal,
         );
-      });
+
+        if (!mounted) return;
+        setState(() {
+          widget.debitur.pembayaran.add(
+            Pembayaran(
+              id: DateTime.now().microsecondsSinceEpoch.toString(),
+              nominal: nominal,
+              tanggal: DateTime.now(),
+            ),
+          );
+        });
+      } on PostgrestException catch (error, stackTrace) {
+        debugPrint(
+          'INSERT pembayaran gagal:\n'
+          'message: ${error.message}\n'
+          'code: ${error.code}\n'
+          'details: ${error.details}\n'
+          'hint: ${error.hint}',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pembayaran gagal disimpan.')),
+        );
+      } catch (error, stackTrace) {
+        debugPrint('Gagal menyimpan pembayaran: $error');
+        debugPrintStack(stackTrace: stackTrace);
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pembayaran gagal disimpan.')),
+        );
+      }
     }
   }
 

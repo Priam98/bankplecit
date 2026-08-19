@@ -37,4 +37,14 @@ class DebiturRepository {
       'nominal': nominal,
     });
   }
+
+  Future<void> addPembayaran({
+    required String debiturId,
+    required double nominal,
+  }) async {
+    await _client.from('pembayaran').insert({
+      'debitur_id': debiturId,
+      'nominal': nominal,
+    });
+  }
 }
