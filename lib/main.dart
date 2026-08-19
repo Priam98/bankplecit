@@ -1,11 +1,47 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'models/debitur.dart';
 import 'models/kasbon.dart';
 import 'models/pembayaran.dart';
+import 'services/debitur_repository.dart';
 
-void main() {
+const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const _supabasePublishableKey =
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  debugPrint('URL kosong: ${_supabaseUrl.isEmpty}');
+  debugPrint('Key kosong: ${_supabasePublishableKey.isEmpty}');
+  debugPrint('URL: $_supabaseUrl');
+
+  if (_supabaseUrl.isEmpty || _supabasePublishableKey.isEmpty) {
+    debugPrint(
+      'Supabase belum diinisialisasi. Isi SUPABASE_URL dan '
+      'SUPABASE_PUBLISHABLE_KEY melalui --dart-define untuk menjalankan test baca.',
+    );
+  } else {
+    await Supabase.initialize(
+      url: _supabaseUrl,
+      publishableKey: _supabasePublishableKey,
+    );
+
+    await _testReadDebiturSummary();
+  }
+
   runApp(const BankPlecitApp());
+}
+
+Future<void> _testReadDebiturSummary() async {
+  try {
+    final summaries = await DebiturRepository().getDebiturSummary();
+    debugPrint('Supabase terhubung: ${summaries.length} data debitur_summary.');
+  } catch (error, stackTrace) {
+    debugPrint('Gagal membaca debitur_summary: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
 }
 
 class BankPlecitApp extends StatelessWidget {
