@@ -60,4 +60,18 @@ class DebiturRepository {
       'nominal': nominal,
     });
   }
+Future<List<RiwayatTransaksi>> getRiwayatTransaksiByDebiturId(
+  String debiturId,
+) async {
+  final response = await _client
+      .from('riwayat_transaksi')
+      .select()
+      .eq('debitur_id', debiturId)
+      .order('created_at', ascending: false);
+
+  return response
+      .map((item) => RiwayatTransaksi.fromMap(item))
+      .toList();
+}
+
 }

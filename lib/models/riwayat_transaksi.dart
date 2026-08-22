@@ -39,6 +39,11 @@ class RiwayatTransaksi {
     final lowerJenis = jenis.toLowerCase();
     return lowerJenis.contains('kasbon') || lowerJenis.contains('utang');
   }
+
+  bool get isPembayaran {
+    final lowerJenis = jenis.toLowerCase();
+    return lowerJenis.contains('pembayaran') || lowerJenis.contains('bayar');
+  }
 }
 
 String _stringValue(Map<String, dynamic> map, List<String> keys) {
