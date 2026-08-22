@@ -5,6 +5,7 @@ import 'models/debitur.dart';
 import 'models/debitur_summary.dart';
 import 'models/kasbon.dart';
 import 'models/pembayaran.dart';
+import 'models/riwayat_transaksi.dart';
 import 'services/debitur_repository.dart';
 
 const _supabaseUrl = String.fromEnvironment(
@@ -60,6 +61,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final List<Debitur> debitur = [];
+  int selectedPageIndex = 0;
 
   double get totalPiutang {
     return debitur.fold(0.0, (total, item) => total + item.sisa);
@@ -118,89 +120,263 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bank Plecit')),
-
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Total Piutang', style: TextStyle(fontSize: 16)),
-
-            const SizedBox(height: 8),
-
-            Text(
-              'Rp ${totalPiutang.toStringAsFixed(0)}',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 24),
-
-            Text('${debitur.length} Debitur', style: TextStyle(fontSize: 18)),
-            const SizedBox(height: 24),
-
-            Expanded(
-              child: ListView.builder(
-                itemCount: debitur.length,
-                itemBuilder: (context, index) {
-                  final item = debitur[index];
-
-                  return ListTile(
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              DetailDebiturPage(debitur: item),
-                        ),
-                      );
-
-                      setState(() {});
-                    },
-                    leading: const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(item.nama),
-                    subtitle: Text(item.sisa <= 0 ? 'Lunas' : 'Belum lunas'),
-                    trailing: Text('Rp ${item.sisa.toStringAsFixed(0)}'),
-                  );
-                },
-              ),
-            ),
-            const Spacer(),
-
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  final kasbonTersimpan = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AddLoanPage(),
-                    ),
-                  );
-
-                  if (kasbonTersimpan == true) {
-                    await _loadDebitur();
-                  }
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Kasih Kasbon'),
-              ),
-            ),
-          ],
+      appBar: AppBar(
+        title: Text(
+          selectedPageIndex == 0 ? 'Bank Plecit' : 'Riwayat Transaksi',
         ),
       ),
 
+      body: selectedPageIndex == 0
+          ? _buildDashboard()
+          : const RiwayatTransaksiPage(),
+
       bottomNavigationBar: NavigationBar(
+        selectedIndex: selectedPageIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            selectedPageIndex = index;
+          });
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          NavigationDestination(icon: Icon(Icons.people), label: 'Debitur'),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long),
+            label: 'Riwayat',
+          ),
         ],
       ),
     );
   }
+
+  Widget _buildDashboard() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Total Piutang', style: TextStyle(fontSize: 16)),
+
+          const SizedBox(height: 8),
+
+          Text(
+            'Rp ${totalPiutang.toStringAsFixed(0)}',
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+          ),
+
+          const SizedBox(height: 24),
+
+          Text('${debitur.length} Debitur', style: TextStyle(fontSize: 18)),
+          const SizedBox(height: 24),
+
+          Expanded(
+            child: ListView.builder(
+              itemCount: debitur.length,
+              itemBuilder: (context, index) {
+                final item = debitur[index];
+
+                return ListTile(
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DetailDebiturPage(debitur: item),
+                      ),
+                    );
+
+                    setState(() {});
+                  },
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(item.nama),
+                  subtitle: Text(item.sisa <= 0 ? 'Lunas' : 'Belum lunas'),
+                  trailing: Text('Rp ${item.sisa.toStringAsFixed(0)}'),
+                );
+              },
+            ),
+          ),
+          const Spacer(),
+
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () async {
+                final kasbonTersimpan = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AddLoanPage()),
+                );
+
+                if (kasbonTersimpan == true) {
+                  await _loadDebitur();
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Kasih Kasbon'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class RiwayatTransaksiPage extends StatefulWidget {
+  const RiwayatTransaksiPage({super.key});
+
+  @override
+  State<RiwayatTransaksiPage> createState() => _RiwayatTransaksiPageState();
+}
+
+class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
+  late Future<List<RiwayatTransaksi>> _riwayatFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _riwayatFuture = _loadRiwayat();
+  }
+
+  Future<List<RiwayatTransaksi>> _loadRiwayat() {
+    return DebiturRepository().getRiwayatTransaksi();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<RiwayatTransaksi>>(
+      future: _riwayatFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          debugPrint('Gagal memuat riwayat_transaksi: ${snapshot.error}');
+          debugPrintStack(stackTrace: snapshot.stackTrace);
+
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 40),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Riwayat transaksi gagal dimuat.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    snapshot.error.toString(),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _riwayatFuture = _loadRiwayat();
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Coba Lagi'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final riwayat = snapshot.data ?? [];
+
+        if (riwayat.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Belum ada riwayat transaksi.'),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {
+              _riwayatFuture = _loadRiwayat();
+            });
+            await _riwayatFuture;
+          },
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: riwayat.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final item = riwayat[index];
+              final color = item.isKasbon ? Colors.orange : Colors.green;
+              final icon = item.isKasbon
+                  ? Icons.arrow_upward
+                  : Icons.arrow_downward;
+
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                leading: CircleAvatar(
+                  backgroundColor: color.withAlpha(31),
+                  foregroundColor: color,
+                  child: Icon(icon),
+                ),
+                title: Text(item.namaDebitur),
+                subtitle: Text(
+                  '${_formatJenis(item.jenis)} - ${_formatTanggal(item.tanggal)}',
+                ),
+                trailing: Text(
+                  'Rp ${_formatRupiah(item.nominal)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+String _formatJenis(String jenis) {
+  if (jenis.isEmpty) {
+    return 'Transaksi';
+  }
+
+  return jenis[0].toUpperCase() + jenis.substring(1).toLowerCase();
+}
+
+String _formatTanggal(DateTime tanggal) {
+  if (tanggal.millisecondsSinceEpoch == 0) {
+    return '-';
+  }
+
+  final day = tanggal.day.toString().padLeft(2, '0');
+  final month = tanggal.month.toString().padLeft(2, '0');
+  final year = tanggal.year.toString();
+  final hour = tanggal.hour.toString().padLeft(2, '0');
+  final minute = tanggal.minute.toString().padLeft(2, '0');
+
+  return '$day/$month/$year $hour:$minute';
+}
+
+String _formatRupiah(double value) {
+  final text = value.toStringAsFixed(0);
+  final buffer = StringBuffer();
+
+  for (var i = 0; i < text.length; i++) {
+    final positionFromEnd = text.length - i;
+    buffer.write(text[i]);
+
+    if (positionFromEnd > 1 && positionFromEnd % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+
+  return buffer.toString();
 }
 
 class DetailDebiturPage extends StatefulWidget {

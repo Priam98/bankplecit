@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/debitur_summary.dart';
+import '../models/riwayat_transaksi.dart';
 
 class DebiturRepository {
   DebiturRepository([SupabaseClient? client])
@@ -11,6 +12,18 @@ class DebiturRepository {
     final response = await _client.from('debitur_summary').select();
 
     return response.map((item) => DebiturSummary.fromMap(item)).toList();
+  }
+
+  Future<List<RiwayatTransaksi>> getRiwayatTransaksi() async {
+    final response = await _client.from('riwayat_transaksi').select();
+
+    final riwayat = response
+        .map((item) => RiwayatTransaksi.fromMap(item))
+        .toList();
+
+    riwayat.sort((a, b) => b.tanggal.compareTo(a.tanggal));
+
+    return riwayat;
   }
 
   Future<void> addKasbon({
