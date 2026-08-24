@@ -7,6 +7,8 @@ import 'models/kasbon.dart';
 import 'models/pembayaran.dart';
 import 'models/riwayat_transaksi.dart';
 import 'services/debitur_repository.dart';
+import 'pages/kas_page.dart';
+
 
 const _supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -128,7 +130,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
       body: selectedPageIndex == 0
           ? _buildDashboard()
-          : const RiwayatTransaksiPage(),
+         : selectedPageIndex == 1
+        ? const RiwayatTransaksiPage()
+        : const KasPage(),
 
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedPageIndex,
@@ -145,6 +149,10 @@ class _DashboardPageState extends State<DashboardPage> {
           NavigationDestination(
             icon: Icon(Icons.receipt_long),
             label: 'Riwayat',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.add),
+            label: 'Kas',
           ),
         ],
       ),
