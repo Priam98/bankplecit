@@ -432,7 +432,7 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
   }
 
   double _sisaPiutang(double totalKasbon, double totalPembayaran) {
-    final sisa = totalKasbon - totalPembayaran;
+    final sisa = totalKasbon + totalPembayaran;
     return sisa < 0 ? 0 : sisa;
   }
 
