@@ -6,9 +6,9 @@ import 'models/debitur_summary.dart';
 import 'models/kasbon.dart';
 import 'models/pembayaran.dart';
 import 'models/riwayat_transaksi.dart';
-import 'services/debitur_repository.dart';
 import 'pages/kas_page.dart';
-
+import 'services/debitur_repository.dart';
+import 'utils/currency.dart';
 
 const _supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -64,6 +64,8 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final List<Debitur> debitur = [];
   int selectedPageIndex = 0;
+  bool _isLoading = true;
+  String? _loadError;
 
   double get totalPiutang {
     return debitur.fold(0.0, (total, item) => total + item.sisa);
@@ -76,6 +78,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadDebitur() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
     try {
       final summaries = await DebiturRepository().getDebiturSummary();
 
@@ -85,6 +92,7 @@ class _DashboardPageState extends State<DashboardPage> {
         debitur
           ..clear()
           ..addAll(summaries.map(_debiturFromSummary));
+        _isLoading = false;
       });
 
       debugPrint(
@@ -93,6 +101,11 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (error, stackTrace) {
       debugPrint('Gagal memuat debitur_summary: $error');
       debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = error.toString();
+      });
     }
   }
 
@@ -119,21 +132,26 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  String get _appBarTitle {
+    switch (selectedPageIndex) {
+      case 1:
+        return 'Riwayat Transaksi';
+      case 2:
+        return 'Kas Umum';
+      default:
+        return 'Bank Plecit';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          selectedPageIndex == 0 ? 'Bank Plecit' : 'Riwayat Transaksi',
-        ),
-      ),
-
+      appBar: AppBar(title: Text(_appBarTitle)),
       body: selectedPageIndex == 0
           ? _buildDashboard()
-         : selectedPageIndex == 1
-        ? const RiwayatTransaksiPage()
-        : const KasPage(),
-
+          : selectedPageIndex == 1
+              ? const RiwayatTransaksiPage()
+              : const KasPage(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedPageIndex,
         onDestinationSelected: (index) {
@@ -151,7 +169,7 @@ class _DashboardPageState extends State<DashboardPage> {
             label: 'Riwayat',
           ),
           NavigationDestination(
-            icon: Icon(Icons.add),
+            icon: Icon(Icons.account_balance_wallet),
             label: 'Kas',
           ),
         ],
@@ -160,73 +178,115 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildDashboard() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Total Piutang', style: TextStyle(fontSize: 16)),
+    if (_isLoading && debitur.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          const SizedBox(height: 8),
-
-          Text(
-            'Rp ${totalPiutang.toStringAsFixed(0)}',
-            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+    if (_loadError != null && debitur.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 40),
+              const SizedBox(height: 12),
+              const Text(
+                'Gagal memuat data debitur.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SelectableText(_loadError!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _loadDebitur,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Coba Lagi'),
+              ),
+            ],
           ),
+        ),
+      );
+    }
 
-          const SizedBox(height: 24),
+    return RefreshIndicator(
+      onRefresh: _loadDebitur,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Total Piutang', style: TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            Text(
+              formatRupiah(totalPiutang, withSymbol: true),
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            Text('${debitur.length} Debitur', style: const TextStyle(fontSize: 18)),
+            const SizedBox(height: 12),
+            Expanded(
+              child: debitur.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 80),
+                        Center(child: Text('Belum ada debitur.')),
+                      ],
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: debitur.length,
+                      itemBuilder: (context, index) {
+                        final item = debitur[index];
 
-          Text('${debitur.length} Debitur', style: TextStyle(fontSize: 18)),
-          const SizedBox(height: 24),
+                        return ListTile(
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DetailDebiturPage(
+                                  debiturId: item.id,
+                                  namaDebitur: item.nama,
+                                ),
+                              ),
+                            );
+                            await _loadDebitur();
+                          },
+                          leading: const CircleAvatar(child: Icon(Icons.person)),
+                          title: Text(item.nama),
+                          subtitle: Text(
+                            item.sisa <= 0 ? 'Lunas' : 'Belum lunas',
+                          ),
+                          trailing: Text(
+                            formatRupiah(item.sisa, withSymbol: true),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  final kasbonTersimpan = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AddLoanPage(),
+                    ),
+                  );
 
-          Expanded(
-            child: ListView.builder(
-              itemCount: debitur.length,
-              itemBuilder: (context, index) {
-                final item = debitur[index];
-
-                return ListTile(
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DetailDebiturPage(
-                          debiturId: item.id,
-                          namaDebitur: item.nama,
-                        ),
-                      ),
-                    );
-
+                  if (kasbonTersimpan == true) {
                     await _loadDebitur();
-                  },
-                  leading: const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(item.nama),
-                  subtitle: Text(item.sisa <= 0 ? 'Lunas' : 'Belum lunas'),
-                  trailing: Text('Rp ${item.sisa.toStringAsFixed(0)}'),
-                );
-              },
+                  }
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Kasih Kasbon'),
+              ),
             ),
-          ),
-          const Spacer(),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () async {
-                final kasbonTersimpan = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AddLoanPage()),
-                );
-
-                if (kasbonTersimpan == true) {
-                  await _loadDebitur();
-                }
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('Kasih Kasbon'),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -250,6 +310,112 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
 
   Future<List<RiwayatTransaksi>> _loadRiwayat() {
     return DebiturRepository().getRiwayatTransaksi();
+  }
+
+  void _reload() {
+    setState(() {
+      _riwayatFuture = _loadRiwayat();
+    });
+  }
+
+  Future<void> _editTransaksi(RiwayatTransaksi item) async {
+    final controller = TextEditingController(
+      text: formatRupiah(item.nominal),
+    );
+
+    final nominal = await showDialog<double>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Edit ${_formatJenis(item.jenis)}'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [RupiahInputFormatter()],
+            decoration: const InputDecoration(
+              labelText: 'Nominal',
+              prefixText: 'Rp ',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final nilai = parseRupiah(controller.text);
+                if (nilai != null && nilai > 0) {
+                  Navigator.pop(context, nilai);
+                }
+              },
+              child: const Text('Simpan'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    if (nominal == null) return;
+
+    try {
+      await DebiturRepository().updateTransaksi(item: item, nominal: nominal);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaksi berhasil diubah.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Gagal edit transaksi: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal mengubah transaksi.')),
+      );
+    }
+  }
+
+  Future<void> _deleteTransaksi(RiwayatTransaksi item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Transaksi'),
+        content: Text(
+          'Hapus ${_formatJenis(item.jenis).toLowerCase()} '
+          '${formatRupiah(item.nominal, withSymbol: true)} '
+          'untuk ${item.namaDebitur}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await DebiturRepository().deleteTransaksi(item);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaksi berhasil dihapus.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Gagal hapus transaksi: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal menghapus transaksi.')),
+      );
+    }
   }
 
   @override
@@ -285,11 +451,7 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _riwayatFuture = _loadRiwayat();
-                      });
-                    },
+                    onPressed: _reload,
                     icon: const Icon(Icons.refresh),
                     label: const Text('Coba Lagi'),
                   ),
@@ -302,19 +464,24 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
         final riwayat = snapshot.data ?? [];
 
         if (riwayat.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('Belum ada riwayat transaksi.'),
+          return RefreshIndicator(
+            onRefresh: () async {
+              _reload();
+              await _riwayatFuture;
+            },
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 120),
+                Center(child: Text('Belum ada riwayat transaksi.')),
+              ],
             ),
           );
         }
 
         return RefreshIndicator(
           onRefresh: () async {
-            setState(() {
-              _riwayatFuture = _loadRiwayat();
-            });
+            _reload();
             await _riwayatFuture;
           },
           child: ListView.separated(
@@ -324,9 +491,8 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
             itemBuilder: (context, index) {
               final item = riwayat[index];
               final color = item.isKasbon ? Colors.orange : Colors.green;
-              final icon = item.isKasbon
-                  ? Icons.arrow_upward
-                  : Icons.arrow_downward;
+              final icon =
+                  item.isKasbon ? Icons.arrow_upward : Icons.arrow_downward;
 
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(vertical: 6),
@@ -337,11 +503,29 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
                 ),
                 title: Text(item.namaDebitur),
                 subtitle: Text(
-                  '${_formatJenis(item.jenis)} - ${_formatTanggal(item.tanggal)}',
+                  '${_formatJenis(item.jenis)} · ${_formatTanggal(item.tanggal)}',
                 ),
-                trailing: Text(
-                  'Rp ${_formatRupiah(item.nominal)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      formatRupiah(item.nominal, withSymbol: true),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _editTransaksi(item);
+                        } else if (value == 'delete') {
+                          _deleteTransaksi(item);
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(value: 'delete', child: Text('Hapus')),
+                      ],
+                    ),
+                  ],
                 ),
               );
             },
@@ -353,17 +537,12 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
 }
 
 String _formatJenis(String jenis) {
-  if (jenis.isEmpty) {
-    return 'Transaksi';
-  }
-
+  if (jenis.isEmpty) return 'Transaksi';
   return jenis[0].toUpperCase() + jenis.substring(1).toLowerCase();
 }
 
 String _formatTanggal(DateTime tanggal) {
-  if (tanggal.millisecondsSinceEpoch == 0) {
-    return '-';
-  }
+  if (tanggal.millisecondsSinceEpoch == 0) return '-';
 
   final day = tanggal.day.toString().padLeft(2, '0');
   final month = tanggal.month.toString().padLeft(2, '0');
@@ -372,22 +551,6 @@ String _formatTanggal(DateTime tanggal) {
   final minute = tanggal.minute.toString().padLeft(2, '0');
 
   return '$day/$month/$year $hour:$minute';
-}
-
-String _formatRupiah(double value) {
-  final text = value.toStringAsFixed(0);
-  final buffer = StringBuffer();
-
-  for (var i = 0; i < text.length; i++) {
-    final positionFromEnd = text.length - i;
-    buffer.write(text[i]);
-
-    if (positionFromEnd > 1 && positionFromEnd % 3 == 1) {
-      buffer.write('.');
-    }
-  }
-
-  return buffer.toString();
 }
 
 class DetailDebiturPage extends StatefulWidget {
@@ -406,6 +569,7 @@ class DetailDebiturPage extends StatefulWidget {
 
 class _DetailDebiturPageState extends State<DetailDebiturPage> {
   late Future<List<RiwayatTransaksi>> _riwayatFuture;
+  bool _isSavingPembayaran = false;
 
   @override
   void initState() {
@@ -417,6 +581,12 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
     return DebiturRepository().getRiwayatTransaksiByDebiturId(
       widget.debiturId,
     );
+  }
+
+  void _reload() {
+    setState(() {
+      _riwayatFuture = _loadRiwayat();
+    });
   }
 
   double _totalKasbon(List<RiwayatTransaksi> riwayat) {
@@ -431,8 +601,9 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
         .fold(0.0, (total, item) => total + item.nominal);
   }
 
+  // Perbaikan bug: sisa = kasbon - pembayaran (bukan penjumlahan).
   double _sisaPiutang(double totalKasbon, double totalPembayaran) {
-    final sisa = totalKasbon + totalPembayaran;
+    final sisa = totalKasbon - totalPembayaran;
     return sisa < 0 ? 0 : sisa;
   }
 
@@ -452,28 +623,23 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Catat Pembayaran'),
-
           content: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
+            inputFormatters: [RupiahInputFormatter()],
             decoration: const InputDecoration(
               labelText: 'Nominal',
               prefixText: 'Rp ',
             ),
           ),
-
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context),
               child: const Text('Batal'),
             ),
-
             FilledButton(
               onPressed: () {
-                final nilai = double.tryParse(controller.text);
-
+                final nilai = parseRupiah(controller.text);
                 if (nilai != null && nilai > 0) {
                   Navigator.pop(context, nilai);
                 }
@@ -486,45 +652,144 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
     );
 
     controller.dispose();
+    if (nominal == null) return;
 
-    if (nominal != null) {
-      try {
-        await DebiturRepository().addPembayaran(
-          debiturId: widget.debiturId,
-          nominal: nominal,
-        );
+    setState(() => _isSavingPembayaran = true);
 
-        if (!mounted) return;
-        setState(() {
-          _riwayatFuture = _loadRiwayat();
-        });
+    try {
+      await DebiturRepository().addPembayaran(
+        debiturId: widget.debiturId,
+        nominal: nominal,
+      );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pembayaran berhasil disimpan.')),
-        );
-      } on PostgrestException catch (error, stackTrace) {
-        debugPrint(
-          'INSERT pembayaran gagal:\n'
-          'message: ${error.message}\n'
-          'code: ${error.code}\n'
-          'details: ${error.details}\n'
-          'hint: ${error.hint}',
-        );
-        debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pembayaran berhasil disimpan.')),
+      );
+    } on PostgrestException catch (error, stackTrace) {
+      debugPrint(
+        'INSERT pembayaran gagal:\n'
+        'message: ${error.message}\n'
+        'code: ${error.code}\n'
+        'details: ${error.details}\n'
+        'hint: ${error.hint}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
 
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pembayaran gagal disimpan.')),
-        );
-      } catch (error, stackTrace) {
-        debugPrint('Gagal menyimpan pembayaran: $error');
-        debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pembayaran gagal disimpan.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Gagal menyimpan pembayaran: $error');
+      debugPrintStack(stackTrace: stackTrace);
 
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pembayaran gagal disimpan.')),
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pembayaran gagal disimpan.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingPembayaran = false);
+    }
+  }
+
+  Future<void> _editTransaksi(RiwayatTransaksi item) async {
+    final controller = TextEditingController(
+      text: formatRupiah(item.nominal),
+    );
+
+    final nominal = await showDialog<double>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Edit ${_formatJenis(item.jenis)}'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [RupiahInputFormatter()],
+            decoration: const InputDecoration(
+              labelText: 'Nominal',
+              prefixText: 'Rp ',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final nilai = parseRupiah(controller.text);
+                if (nilai != null && nilai > 0) {
+                  Navigator.pop(context, nilai);
+                }
+              },
+              child: const Text('Simpan'),
+            ),
+          ],
         );
-      }
+      },
+    );
+
+    controller.dispose();
+    if (nominal == null) return;
+
+    try {
+      await DebiturRepository().updateTransaksi(item: item, nominal: nominal);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaksi berhasil diubah.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Gagal edit transaksi: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal mengubah transaksi.')),
+      );
+    }
+  }
+
+  Future<void> _deleteTransaksi(RiwayatTransaksi item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Transaksi'),
+        content: Text(
+          'Hapus ${_formatJenis(item.jenis).toLowerCase()} '
+          '${formatRupiah(item.nominal, withSymbol: true)}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await DebiturRepository().deleteTransaksi(item);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaksi berhasil dihapus.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Gagal hapus transaksi: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal menghapus transaksi.')),
+      );
     }
   }
 
@@ -532,7 +797,6 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.namaDebitur)),
-
       body: FutureBuilder<List<RiwayatTransaksi>>(
         future: _riwayatFuture,
         builder: (context, snapshot) {
@@ -564,11 +828,7 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _riwayatFuture = _loadRiwayat();
-                        });
-                      },
+                      onPressed: _reload,
                       icon: const Icon(Icons.refresh),
                       label: const Text('Coba Lagi'),
                     ),
@@ -582,106 +842,150 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
           final totalKasbon = _totalKasbon(riwayat);
           final totalPembayaran = _totalPembayaran(riwayat);
           final sisaPiutang = _sisaPiutang(totalKasbon, totalPembayaran);
-          final kelebihanBayar = _kelebihanBayar(
-            totalKasbon,
-            totalPembayaran,
-          );
+          final kelebihanBayar = _kelebihanBayar(totalKasbon, totalPembayaran);
           final status = _status(totalKasbon, totalPembayaran);
 
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(widget.namaDebitur, style: const TextStyle(fontSize: 16)),
-                const SizedBox(height: 16),
-                _DetailAmount(
-                  label: 'Total Kasbon',
-                  value: 'Rp ${_formatRupiah(totalKasbon)}',
-                  fontSize: 28,
-                ),
-                const SizedBox(height: 16),
-                _DetailAmount(
-                  label: 'Total Pembayaran',
-                  value: 'Rp ${_formatRupiah(totalPembayaran)}',
-                  fontSize: 22,
-                ),
-                const SizedBox(height: 16),
-                _DetailAmount(
-                  label: 'Sisa Piutang',
-                  value: 'Rp ${_formatRupiah(sisaPiutang)}',
-                  fontSize: 28,
-                ),
-                const SizedBox(height: 16),
-                const Text('Status', style: TextStyle(fontSize: 16)),
-                Text(
-                  status,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (kelebihanBayar > 0) ...[
+          return RefreshIndicator(
+            onRefresh: () async {
+              _reload();
+              await _riwayatFuture;
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.namaDebitur, style: const TextStyle(fontSize: 16)),
                   const SizedBox(height: 16),
                   _DetailAmount(
-                    label: 'Kelebihan Bayar',
-                    value: 'Rp ${_formatRupiah(kelebihanBayar)}',
+                    label: 'Total Kasbon',
+                    value: formatRupiah(totalKasbon, withSymbol: true),
+                    fontSize: 28,
+                  ),
+                  const SizedBox(height: 16),
+                  _DetailAmount(
+                    label: 'Total Pembayaran',
+                    value: formatRupiah(totalPembayaran, withSymbol: true),
                     fontSize: 22,
                   ),
-                ],
-                const SizedBox(height: 24),
-                const Text(
-                  'Riwayat Transaksi',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: riwayat.isEmpty
-                      ? const Center(
-                          child: Text('Belum ada riwayat transaksi.'),
-                        )
-                      : ListView.separated(
-                          itemCount: riwayat.length,
-                          separatorBuilder: (context, index) =>
-                              const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final item = riwayat[index];
-                            final color = item.isKasbon
-                                ? Colors.orange
-                                : Colors.green;
-                            final icon = item.isKasbon
-                                ? Icons.arrow_upward
-                                : Icons.arrow_downward;
-
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: CircleAvatar(
-                                backgroundColor: color.withAlpha(31),
-                                foregroundColor: color,
-                                child: Icon(icon),
-                              ),
-                              title: Text(_formatJenis(item.jenis)),
-                              subtitle: Text(_formatTanggal(item.tanggal)),
-                              trailing: Text(
-                                'Rp ${_formatRupiah(item.nominal)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: catatPembayaran,
-                    icon: const Icon(Icons.payment),
-                    label: const Text('Catat Pembayaran'),
+                  const SizedBox(height: 16),
+                  _DetailAmount(
+                    label: 'Sisa Piutang',
+                    value: formatRupiah(sisaPiutang, withSymbol: true),
+                    fontSize: 28,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  const Text('Status', style: TextStyle(fontSize: 16)),
+                  Text(
+                    status,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (kelebihanBayar > 0) ...[
+                    const SizedBox(height: 16),
+                    _DetailAmount(
+                      label: 'Kelebihan Bayar',
+                      value: formatRupiah(kelebihanBayar, withSymbol: true),
+                      fontSize: 22,
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Riwayat Transaksi',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: riwayat.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 40),
+                              Center(child: Text('Belum ada riwayat transaksi.')),
+                            ],
+                          )
+                        : ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: riwayat.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final item = riwayat[index];
+                              final color =
+                                  item.isKasbon ? Colors.orange : Colors.green;
+                              final icon = item.isKasbon
+                                  ? Icons.arrow_upward
+                                  : Icons.arrow_downward;
+
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  backgroundColor: color.withAlpha(31),
+                                  foregroundColor: color,
+                                  child: Icon(icon),
+                                ),
+                                title: Text(_formatJenis(item.jenis)),
+                                subtitle: Text(_formatTanggal(item.tanggal)),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      formatRupiah(
+                                        item.nominal,
+                                        withSymbol: true,
+                                      ),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        if (value == 'edit') {
+                                          _editTransaksi(item);
+                                        } else if (value == 'delete') {
+                                          _deleteTransaksi(item);
+                                        }
+                                      },
+                                      itemBuilder: (context) => const [
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text('Edit'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('Hapus'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isSavingPembayaran ? null : catatPembayaran,
+                      icon: _isSavingPembayaran
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.payment),
+                      label: Text(
+                        _isSavingPembayaran
+                            ? 'Menyimpan...'
+                            : 'Catat Pembayaran',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -727,6 +1031,32 @@ class _AddLoanPageState extends State<AddLoanPage> {
   final namaController = TextEditingController();
   final nominalController = TextEditingController();
 
+  List<String> _debiturNames = [];
+  bool _isLoadingNames = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNames();
+  }
+
+  Future<void> _loadNames() async {
+    try {
+      final names = await DebiturRepository().getDebiturNames();
+      if (!mounted) return;
+      setState(() {
+        _debiturNames = names;
+        _isLoadingNames = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Gagal memuat nama debitur: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() => _isLoadingNames = false);
+    }
+  }
+
   @override
   void dispose() {
     namaController.dispose();
@@ -736,12 +1066,12 @@ class _AddLoanPageState extends State<AddLoanPage> {
 
   Future<void> simpanKasbon() async {
     final nama = namaController.text.trim();
-    final nominal = double.tryParse(nominalController.text);
+    final nominal = parseRupiah(nominalController.text);
 
     if (nama.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Nama debitur belum diisi')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama debitur belum diisi')),
+      );
       return;
     }
 
@@ -751,6 +1081,8 @@ class _AddLoanPageState extends State<AddLoanPage> {
       );
       return;
     }
+
+    setState(() => _isSaving = true);
 
     try {
       await DebiturRepository().addKasbon(namaDebitur: nama, nominal: nominal);
@@ -767,6 +1099,8 @@ class _AddLoanPageState extends State<AddLoanPage> {
           content: Text('Kasbon gagal disimpan. Silakan coba lagi.'),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -774,38 +1108,106 @@ class _AddLoanPageState extends State<AddLoanPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Tambah Kasbon')),
-
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(
-              controller: namaController,
-              decoration: const InputDecoration(
-                labelText: 'Nama Debitur',
-                border: OutlineInputBorder(),
-              ),
+            if (_isLoadingNames)
+              const LinearProgressIndicator()
+            else
+              const SizedBox(height: 4),
+            const SizedBox(height: 8),
+            Autocomplete<String>(
+              optionsBuilder: (textEditingValue) {
+                final query = textEditingValue.text.trim().toLowerCase();
+                if (query.isEmpty) {
+                  return _debiturNames;
+                }
+                return _debiturNames.where(
+                  (name) => name.toLowerCase().contains(query),
+                );
+              },
+              onSelected: (selection) {
+                namaController.text = selection;
+                namaController.selection = TextSelection.collapsed(
+                  offset: selection.length,
+                );
+              },
+              fieldViewBuilder: (
+                context,
+                textEditingController,
+                focusNode,
+                onFieldSubmitted,
+              ) {
+                // Sinkronkan nilai ke controller utama.
+                textEditingController.addListener(() {
+                  if (namaController.text != textEditingController.text) {
+                    namaController.value = textEditingController.value;
+                  }
+                });
+
+                return TextField(
+                  controller: textEditingController,
+                  focusNode: focusNode,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Nama Debitur',
+                    hintText: 'Ketik atau pilih debitur yang sudah ada',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person_search),
+                  ),
+                  onSubmitted: (_) => onFieldSubmitted(),
+                );
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(8),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final option = options.elementAt(index);
+                          return ListTile(
+                            dense: true,
+                            title: Text(option),
+                            onTap: () => onSelected(option),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-
             const SizedBox(height: 16),
-
             TextField(
               controller: nominalController,
               keyboardType: TextInputType.number,
+              inputFormatters: [RupiahInputFormatter()],
               decoration: const InputDecoration(
                 labelText: 'Nominal',
                 prefixText: 'Rp ',
                 border: OutlineInputBorder(),
               ),
             ),
-
             const SizedBox(height: 24),
-
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: simpanKasbon,
-                child: const Text('Simpan Kasbon'),
+                onPressed: _isSaving ? null : simpanKasbon,
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Simpan Kasbon'),
               ),
             ),
           ],
