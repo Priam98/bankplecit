@@ -32,7 +32,8 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
   }
 
   Future<void> _editTransaksi(RiwayatTransaksi item) async {
-    final controller = TextEditingController(text: formatRupiah(item.nominal));
+    final controller =
+        TextEditingController(text: formatRupiah(item.nominal.abs()));
 
     final nominal = await showDialog<double>(
       context: context,
@@ -94,7 +95,7 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
         title: const Text('Hapus Transaksi'),
         content: Text(
           'Hapus ${formatJenis(item.jenis).toLowerCase()} '
-          '${formatRupiah(item.nominal, withSymbol: true)} '
+          '${formatRupiah(item.nominal.abs(), withSymbol: true)} '
           'untuk ${item.namaDebitur}?',
         ),
         actions: [
@@ -217,7 +218,7 @@ class _RiwayatTransaksiPageState extends State<RiwayatTransaksiPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      formatRupiah(item.nominal, withSymbol: true),
+                      formatRupiah(item.nominal.abs(), withSymbol: true),
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     PopupMenuButton<String>(

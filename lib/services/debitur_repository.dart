@@ -14,11 +14,12 @@ class DebiturRepository {
     return response.map((item) => DebiturSummary.fromMap(item)).toList();
   }
 
-  /// Daftar nama debitur unik (untuk autocomplete), diurutkan A–Z.
+  /// Semua nama debitur (termasuk yang sudah lunas) untuk autocomplete.
   Future<List<String>> getDebiturNames() async {
-    final summaries = await getDebiturSummary();
-    final names =
-        summaries.map((e) => e.nama.trim()).where((n) => n.isNotEmpty);
+    final response = await _client.from('debitur').select('nama');
+    final names = response
+        .map((row) => (row['nama'] as String?)?.trim() ?? '')
+        .where((n) => n.isNotEmpty);
     final unique = names.toSet().toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return unique;
@@ -89,11 +90,22 @@ class DebiturRepository {
     });
   }
 
+  /// Tambah kasbon ke debitur yang sudah ada (by id).
+  Future<void> addKasbonByDebiturId({
+    required String debiturId,
+    required double nominal,
+  }) async {
+    await _client.from('kasbon').insert({
+      'debitur_id': debiturId,
+      'nominal': nominal,
+    });
+  }
+
   Future<void> updateKasbon({
     required String id,
     required double nominal,
   }) async {
-    await _client.from('kasbon').update({'nominal': nominal}).eq('id', id);
+    await _client.from('kasbon').update({'nominal': nominal.abs()}).eq('id', id);
   }
 
   Future<void> deleteKasbon(String id) async {
@@ -104,7 +116,7 @@ class DebiturRepository {
     required String id,
     required double nominal,
   }) async {
-    await _client.from('pembayaran').update({'nominal': nominal}).eq('id', id);
+    await _client.from('pembayaran').update({'nominal': nominal.abs()}).eq('id', id);
   }
 
   Future<void> deletePembayaran(String id) async {

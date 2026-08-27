@@ -39,7 +39,10 @@ class BankPlecitApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Bank Plecit',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        // Biru khas Flutter
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0175C2),
+        ),
         useMaterial3: true,
         cardTheme: CardThemeData(
           elevation: 0,

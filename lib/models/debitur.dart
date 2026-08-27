@@ -14,14 +14,14 @@ class Debitur {
     required this.pembayaran,
   });
   double get totalKasbon {
-    return kasbon.fold(0.0, (total, item) => total + item.nominal);
+    return kasbon.fold(0.0, (total, item) => total + item.nominal.abs());
   }
 
   double get totalPembayaran {
-    return pembayaran.fold(0.0, (total, item) => total + item.nominal);
+    return pembayaran.fold(0.0, (total, item) => total + item.nominal.abs());
   }
 
-  double get sisa{
+  double get sisa {
     final hasil = totalKasbon - totalPembayaran;
     return hasil < 0 ? 0 : hasil;
   }

@@ -20,17 +20,14 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  final List<Debitur> debitur = [];
+  /// Hanya debitur yang masih punya sisa (belum lunas).
+  final List<Debitur> debiturAktif = [];
   int selectedPageIndex = 0;
   bool _isLoading = true;
   String? _loadError;
 
   double get totalPiutang {
-    return debitur.fold(0.0, (total, item) => total + item.sisa);
-  }
-
-  int get jumlahBelumLunas {
-    return debitur.where((d) => d.sisa > 0).length;
+    return debiturAktif.fold(0.0, (total, item) => total + item.sisa);
   }
 
   @override
@@ -49,16 +46,17 @@ class _DashboardPageState extends State<DashboardPage> {
       final summaries = await DebiturRepository().getDebiturSummary();
       if (!mounted) return;
 
+      final semua = summaries.map(_debiturFromSummary).toList();
+      final aktif = semua.where((d) => d.sisa > 0).toList();
+
       setState(() {
-        debitur
+        debiturAktif
           ..clear()
-          ..addAll(summaries.map(_debiturFromSummary));
+          ..addAll(aktif);
         _isLoading = false;
       });
 
-      debugPrint(
-        'Supabase terhubung: ${summaries.length} data debitur_summary.',
-      );
+      debugPrint('Supabase terhubung: ${aktif.length} debitur aktif.');
     } catch (error, stackTrace) {
       debugPrint('Gagal memuat debitur_summary: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -142,11 +140,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildDashboard() {
-    if (_isLoading && debitur.isEmpty) {
+    if (_isLoading && debiturAktif.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_loadError != null && debitur.isEmpty) {
+    if (_loadError != null && debiturAktif.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -206,21 +204,16 @@ class _DashboardPageState extends State<DashboardPage> {
                       color: Theme.of(context).colorScheme.onPrimaryContainer,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      StatusChip(
-                        label: '${debitur.length} debitur',
-                        positive: true,
-                      ),
-                      if (jumlahBelumLunas > 0)
-                        StatusChip(
-                          label: '$jumlahBelumLunas belum lunas',
-                          positive: false,
-                        ),
-                    ],
+                  const SizedBox(height: 8),
+                  Text(
+                    '${debiturAktif.length} debitur',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onPrimaryContainer
+                          .withAlpha(200),
+                    ),
                   ),
                 ],
               ),
@@ -237,20 +230,19 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const Spacer(),
               Text(
-                '${debitur.length}',
+                '${debiturAktif.length}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
           ),
           const SizedBox(height: 8),
-          if (debitur.isEmpty)
+          if (debiturAktif.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 48),
-              child: Center(child: Text('Belum ada debitur.')),
+              child: Center(child: Text('Belum ada debitur aktif.')),
             )
           else
-            ...debitur.map((item) {
-              final lunas = item.sisa <= 0;
+            ...debiturAktif.map((item) {
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
@@ -278,13 +270,13 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                   title: Text(item.nama),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 4),
+                  subtitle: const Padding(
+                    padding: EdgeInsets.only(top: 4),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: StatusChip(
-                        label: lunas ? 'Lunas' : 'Belum lunas',
-                        positive: lunas,
+                        label: 'Belum lunas',
+                        positive: false,
                       ),
                     ),
                   ),
@@ -292,9 +284,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     formatRupiah(item.sisa, withSymbol: true),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: lunas
-                          ? Colors.green.shade700
-                          : Theme.of(context).colorScheme.error,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
                 ),

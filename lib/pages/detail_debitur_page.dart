@@ -25,6 +25,7 @@ class DetailDebiturPage extends StatefulWidget {
 class _DetailDebiturPageState extends State<DetailDebiturPage> {
   late Future<List<RiwayatTransaksi>> _riwayatFuture;
   bool _isSavingPembayaran = false;
+  bool _isSavingKasbon = false;
 
   @override
   void initState() {
@@ -44,16 +45,18 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
     });
   }
 
+  // View riwayat bisa mengembalikan pembayaran sebagai nominal negatif.
+  // Pakai abs supaya total & sisa tidak salah (mis. 200 - (-200) = 400).
   double _totalKasbon(List<RiwayatTransaksi> riwayat) {
     return riwayat
         .where((item) => item.isKasbon)
-        .fold(0.0, (total, item) => total + item.nominal);
+        .fold(0.0, (total, item) => total + item.nominal.abs());
   }
 
   double _totalPembayaran(List<RiwayatTransaksi> riwayat) {
     return riwayat
         .where((item) => item.isPembayaran)
-        .fold(0.0, (total, item) => total + item.nominal);
+        .fold(0.0, (total, item) => total + item.nominal.abs());
   }
 
   double _sisaPiutang(double totalKasbon, double totalPembayaran) {
@@ -69,18 +72,18 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
     return totalPembayaran >= totalKasbon;
   }
 
-  Future<void> catatPembayaran() async {
+  Future<double?> _dialogNominal(String title) async {
     final controller = TextEditingController();
-
     final nominal = await showDialog<double>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Catat Pembayaran'),
+          title: Text(title),
           content: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
             inputFormatters: [RupiahInputFormatter()],
+            autofocus: true,
             decoration: const InputDecoration(
               labelText: 'Nominal',
               prefixText: 'Rp ',
@@ -104,8 +107,39 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
         );
       },
     );
-
     controller.dispose();
+    return nominal;
+  }
+
+  Future<void> tambahKasbon() async {
+    final nominal = await _dialogNominal('Tambah Kasbon');
+    if (nominal == null) return;
+
+    setState(() => _isSavingKasbon = true);
+    try {
+      await DebiturRepository().addKasbonByDebiturId(
+        debiturId: widget.debiturId,
+        nominal: nominal,
+      );
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kasbon berhasil ditambahkan.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Gagal menambah kasbon: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kasbon gagal disimpan.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingKasbon = false);
+    }
+  }
+
+  Future<void> catatPembayaran() async {
+    final nominal = await _dialogNominal('Catat Pembayaran');
     if (nominal == null) return;
 
     setState(() => _isSavingPembayaran = true);
@@ -147,7 +181,8 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
   }
 
   Future<void> _editTransaksi(RiwayatTransaksi item) async {
-    final controller = TextEditingController(text: formatRupiah(item.nominal));
+    final controller =
+        TextEditingController(text: formatRupiah(item.nominal.abs()));
 
     final nominal = await showDialog<double>(
       context: context,
@@ -209,7 +244,7 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
         title: const Text('Hapus Transaksi'),
         content: Text(
           'Hapus ${formatJenis(item.jenis).toLowerCase()} '
-          '${formatRupiah(item.nominal, withSymbol: true)}?',
+          '${formatRupiah(item.nominal.abs(), withSymbol: true)}?',
         ),
         actions: [
           TextButton(
@@ -399,7 +434,10 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              formatRupiah(item.nominal, withSymbol: true),
+                              formatRupiah(
+                                item.nominal.abs(),
+                                withSymbol: true,
+                              ),
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -429,21 +467,52 @@ class _DetailDebiturPageState extends State<DetailDebiturPage> {
                     );
                   }),
                 const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: _isSavingPembayaran ? null : catatPembayaran,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
-                  icon: _isSavingPembayaran
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.payment),
-                  label: Text(
-                    _isSavingPembayaran ? 'Menyimpan...' : 'Catat Pembayaran',
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: (_isSavingKasbon || _isSavingPembayaran)
+                            ? null
+                            : tambahKasbon,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                        ),
+                        icon: _isSavingKasbon
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.add),
+                        label: Text(
+                          _isSavingKasbon ? 'Menyimpan...' : 'Tambah Kasbon',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: (_isSavingKasbon || _isSavingPembayaran)
+                            ? null
+                            : catatPembayaran,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                        ),
+                        icon: _isSavingPembayaran
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.payment),
+                        label: Text(
+                          _isSavingPembayaran
+                              ? 'Menyimpan...'
+                              : 'Catat Bayar',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
