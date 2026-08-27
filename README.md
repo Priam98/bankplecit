@@ -1,3 +1,3 @@
 # bank_plecit
 
-A new Flutter project.
+Project buat nyimpen data kasbon ke saya sendiri
